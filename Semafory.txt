@@ -1,0 +1,85 @@
+const QUEUE_SIZE = 10;
+
+server semaphore {
+  var state : 0..QUEUE_SIZE;
+  { p | state > 0 } -> { state = state - 1; return :ok; }
+  { v | state < QUEUE_SIZE } -> { state = state + 1; return :ok; }
+}
+
+server queue {
+  var elements : 0..QUEUE_SIZE;
+
+  { produce | elements < QUEUE_SIZE } -> { elements = elements + 1; return :ok; }
+  { consume | elements > 0 } -> { elements = elements - 1; return :ok; }
+
+}
+
+var stepIntoA = semaphore() { state = 1 };
+var stepIntoB = semaphore() { state = 1 };
+var blockFullA = semaphore() { state = QUEUE_SIZE };
+var blockFullB = semaphore() { state = QUEUE_SIZE };
+var blockEmptyA = semaphore() { state = 0 };
+var blockEmptyB = semaphore() { state = 0 };
+
+var queueA = queue() { elements = 0 };
+var queueB = queue() { elements = 0 };
+
+thread producerA() {
+  loop {
+    blockFullA.p();
+    stepIntoA.p();
+
+    queueA.produce();
+
+    stepIntoA.v();
+    blockEmptyA.v();
+  }
+}
+
+thread producerB() {
+  loop {
+    blockFullB.p();
+    stepIntoB.p();
+
+    queueB.produce();
+
+    stepIntoB.v();
+    blockEmptyB.v();
+  }
+}
+
+thread consumer() {
+  loop {
+    blockEmptyA.p();
+    stepIntoA.p();
+
+    queueA.consume();
+
+    stepIntoA.v();
+    blockFullA.v();
+
+    blockEmptyB.p();
+    stepIntoB.p();
+
+    queueB.consume();
+
+    stepIntoB.v();
+    blockFullB.v();
+  }
+}
+
+thread readerA() {
+  loop {
+    stepIntoA.p();
+    --read
+    stepIntoA.v();
+  }
+}
+
+thread readerB() {
+  loop {
+    stepIntoB.p();
+    --read
+    stepIntoB.v();
+  }
+}
